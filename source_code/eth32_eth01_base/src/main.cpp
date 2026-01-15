@@ -1,6 +1,8 @@
 #include <network/WifiNetwork.h>
-#include <network/HttpServer.h>
+//#include <network/HttpServer.h>
+#include <network/ArtnetClient.h>
 #include "PerformanceData.h"
+
 #include "FastLED.h"
 
 #define SINGLE_TIME_UNIT       5
@@ -14,22 +16,24 @@ uint32_t secondCycleCounter  = 0; // Counter to know how many cycles have passed
 uint32_t fpsCycleCounter     = 0; // Counter to know how many cycles have passed sincs last frame
 
 
-WifiNetwork *wifiNetwork;
-HttpServer  *httpServer;
-PerformanceData     *performance;
+WifiNetwork     *wifiNetwork;
+//HttpServer      *httpServer;
+PerformanceData *performance;
+ArtnetClient    *artnetClient;
 
 void setup() {
-  httpServer  = new HttpServer();
-  wifiNetwork = new WifiNetwork();
+  //httpServer   = new HttpServer();
+  wifiNetwork  = new WifiNetwork();
+  artnetClient = new ArtnetClient();
   performance = PerformanceData::GetInstance();
   wifiNetwork->Connect();
-  httpServer->Start();
-
+  //httpServer->Start();
+  artnetClient->Connect();
 }
 
 void loop() {
   EVERY_N_MILLISECONDS(SINGLE_TIME_UNIT){
-    httpServer->Listen();
+    //httpServer->Listen();
   }
   EVERY_N_MILLISECONDS(SINGLE_TIME_UNIT * SECOND_TIME_UNIT){ performance->ResetCounters(); }
   performance->CountLoop();

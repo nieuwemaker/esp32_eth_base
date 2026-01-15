@@ -23,7 +23,7 @@ class AbstractNetworkInterface{
         void DisConnect(),
              PrintStatus();
         String GetLocalName(){ return HOST_NAME + MyIP; }
-        IPAddress GetIP();
+        IPAddress GetIP() {return this->MyIP; }
 
         IPAddress     MyIP;  
 };
