@@ -34,6 +34,7 @@ void setup() {
 void loop() {
   EVERY_N_MILLISECONDS(SINGLE_TIME_UNIT){
     //httpServer->Listen();
+    //artnetClient->Connect();
   }
   EVERY_N_MILLISECONDS(SINGLE_TIME_UNIT * SECOND_TIME_UNIT){ performance->ResetCounters(); }
   performance->CountLoop();
