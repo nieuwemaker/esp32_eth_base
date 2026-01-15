@@ -12,20 +12,6 @@ bool ArtnetClient::IsConnected(){
     return false;
 }
 bool ArtnetClient::Connect(){
-    
-    /*
-    if(!Ethernet.connected()){
-        Ethernet.begin(this->staticIP,INADDR_NONE,INADDR_NONE,this->staticSubnet);
-        delay(100);
-        Ethernet.begin(DHCP_TIMEOUT_WINDOW);
-        delay(500);
-        return true;
-    } else if(!this->udpStarted){
-        this->udpClient = NetworkUDP();
-        this->udpClient.begin(Ethernet.localIP(),ARTNET_LISTENING_PORT);
-        this->udpStarted = true;
-        return true;
-    }*/
     if(!ETH.connected()){
         ETH.begin(ETH_PHY_TYPE,ETH_ADDR,ETH_MDC_PIN,ETH_MDIO_PIN,ETH_POWER_PIN,ETH_CLK_MODE);
         ETH.macAddress(mac);
