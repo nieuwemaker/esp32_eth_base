@@ -73,6 +73,8 @@
 
 > After applying the network settings, the connection to WLED will be broken. You need to connect to the new AP SSID name `PIXELXX-AP` to continue working on the configuration.
 
+> To test the Ethernet connection you need to remove the **Orange**, **Yellow** and **Green** pins from the WT32-ETH01 first. This blocks the Ethernet functionality.
+
 ## Pins I can use for WLED safely
 Pins: 2, **4** *(default pin)*, 5, 12, 17 --> So yes, only these 5!! With a maximum of 2 16x16 screens per pin, this amounts to enough pins for the:
 - NM Pixel Mini with 1 screen
