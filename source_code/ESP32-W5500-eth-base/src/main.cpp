@@ -14,11 +14,11 @@
 #define USE_TWO_ETH_PORTS 0
  
 // #ifndef ETH_PHY_TYPE
-#define ETH_PHY_TYPE        ETH_PHY_W5500
-#define ETH_PHY_ADDR         1
-#define ETH_PHY_CS           5 // CS esp32s3    10  esp32   5
-#define ETH_PHY_IRQ          -1 //              9           15
-#define ETH_PHY_RST          -1 //              3           4
+#define ETH_PHY_TYPE          ETH_PHY_W5500
+#define ETH_PHY_ADDR          1
+#define ETH_PHY_CS            5 // CS esp32s3  10  |  esp32   5
+#define ETH_PHY_IRQ          -1 //              9  |         15
+#define ETH_PHY_RST          -1 //              3  |          4
 // #endif
  
 // SPI pins                         esp32s3     esp32

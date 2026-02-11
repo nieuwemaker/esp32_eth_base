@@ -9,22 +9,36 @@
  
 #include <ETH.h>
 #include <SPI.h>
+
+#define DEFAULT_SCK  19
+#define DEFAULT_MISO 18
+#define DEFAULT_MOSI 23
+#define DEFAULT_CS    2
+#define DEFAULT_IRQ  22
+#define DEFAULT_RST  15
+
+#define HSPI_SCK  12
+#define HSPI_MISO 14
+#define HSPI_MOSI 13
+#define HSPI_CS   15
+#define HSPI_IRQ  22
+#define HSPI_RST   4
  
 // Set this to 1 to enable dual Ethernet support
 #define USE_TWO_ETH_PORTS 0
  
 // #ifndef ETH_PHY_TYPE
-#define ETH_PHY_TYPE        ETH_PHY_W5500
+#define ETH_PHY_TYPE         ETH_PHY_W5500
 #define ETH_PHY_ADDR         1
-#define ETH_PHY_CS           5 // CS esp32s3    10  esp32   5
-#define ETH_PHY_IRQ          -1 //              9           15
-#define ETH_PHY_RST          -1 //              3           4
+#define ETH_PHY_CS           HSPI_CS  //2 //5 // CS esp32s3    10  esp32   5
+#define ETH_PHY_IRQ          HSPI_IRQ //22 //              9           15
+#define ETH_PHY_RST          HSPI_RST //              3           4
 // #endif
  
 // SPI pins                         esp32s3     esp32
-#define ETH_SPI_SCK         SCK  // 12          18
-#define ETH_SPI_MISO        MISO // 13          19
-#define ETH_SPI_MOSI        MOSI // 11          23
+#define ETH_SPI_SCK         HSPI_SCK  //19 //SCK  // 12          18
+#define ETH_SPI_MISO        HSPI_MISO //MISO // 13          19
+#define ETH_SPI_MOSI        HSPI_MOSI //MOSI // 11          23
  
 static bool eth_connected = false;
  
@@ -89,7 +103,9 @@ void testClient(const char * host, uint16_t port)
  
 void setup()
 {
-  Serial.begin(115200);
+
+  Serial.begin(9600);
+  Serial.println("Serial started");
   Network.onEvent(onEvent);
  
   SPI.begin(ETH_SPI_SCK, ETH_SPI_MISO, ETH_SPI_MOSI, ETH_PHY_CS);
@@ -99,7 +115,7 @@ void setup()
 void loop()
 {
   if (eth_connected) {
-    testClient("httpbin.org", 80);
+    //testClient("httpbin.org", 80);
   }
-  delay(10000);
+  delay(1000);
 }
