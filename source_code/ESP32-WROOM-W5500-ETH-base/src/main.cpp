@@ -41,6 +41,9 @@
 #define ETH_SPI_MOSI        HSPI_MOSI //MOSI // 11          23
  
 static bool eth_connected = false;
+
+// From: https://randomnerdtutorials.com/esp32-pinout-reference-gpios/
+uint8_t ledPins[12] = {5,16,17,18,19,21,23,25,26,27,32,33};
  
 // Ethernet event handler
 void onEvent(arduino_event_id_t event, arduino_event_info_t info)
@@ -110,6 +113,7 @@ void setup()
  
   SPI.begin(ETH_SPI_SCK, ETH_SPI_MISO, ETH_SPI_MOSI, ETH_PHY_CS);
   ETH.begin(ETH_PHY_TYPE, ETH_PHY_ADDR, ETH_PHY_CS, ETH_PHY_IRQ, ETH_PHY_RST, SPI);
+  ETH.setHostname()
 }
  
 void loop()
@@ -117,5 +121,5 @@ void loop()
   if (eth_connected) {
     //testClient("httpbin.org", 80);
   }
-  delay(1000);
+  delay(3000);
 }
