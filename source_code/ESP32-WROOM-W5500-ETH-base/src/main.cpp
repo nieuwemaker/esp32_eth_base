@@ -9,7 +9,9 @@
  
 #include <ETH.h>
 #include <SPI.h>
+#include <FastLED.h>
 
+// Backup old SPI lines, but programming did not work
 #define DEFAULT_SCK  19
 #define DEFAULT_MISO 18
 #define DEFAULT_MOSI 23
@@ -30,21 +32,27 @@
 // #ifndef ETH_PHY_TYPE
 #define ETH_PHY_TYPE         ETH_PHY_W5500
 #define ETH_PHY_ADDR         1
-#define ETH_PHY_CS           HSPI_CS  //2 //5 // CS esp32s3    10  esp32   5
-#define ETH_PHY_IRQ          HSPI_IRQ //22 //              9           15
-#define ETH_PHY_RST          HSPI_RST //              3           4
+#define ETH_PHY_CS           HSPI_CS  
+#define ETH_PHY_IRQ          HSPI_IRQ 
+#define ETH_PHY_RST          HSPI_RST 
 // #endif
  
-// SPI pins                         esp32s3     esp32
-#define ETH_SPI_SCK         HSPI_SCK  //19 //SCK  // 12          18
-#define ETH_SPI_MISO        HSPI_MISO //MISO // 13          19
-#define ETH_SPI_MOSI        HSPI_MOSI //MOSI // 11          23
+// SPI pins                      
+#define ETH_SPI_SCK         HSPI_SCK  
+#define ETH_SPI_MISO        HSPI_MISO 
+#define ETH_SPI_MOSI        HSPI_MOSI 
  
 static bool eth_connected = false;
 
 // From: https://randomnerdtutorials.com/esp32-pinout-reference-gpios/
 uint8_t ledPins[12] = {5,16,17,18,19,21,23,25,26,27,32,33};
+CRGB    leds[1024];
+
+int performanceCounter = 0;
  
+///////////////////////////////////////////////////
+// ETHERNET FUNCTIONS
+///////////////////////////////////////////////////
 // Ethernet event handler
 void onEvent(arduino_event_id_t event, arduino_event_info_t info)
 {
@@ -52,7 +60,7 @@ void onEvent(arduino_event_id_t event, arduino_event_info_t info)
     case ARDUINO_EVENT_ETH_START:
       Serial.println("ETH Started");
       // Set Ethernet hostname here
-      ETH.setHostname("esp32-eth0");
+      ETH.setHostname("Pixel-block");
       break;
     case ARDUINO_EVENT_ETH_CONNECTED:
       Serial.println("ETH Connected");
@@ -103,6 +111,29 @@ void testClient(const char * host, uint16_t port)
   Serial.println("closing connection\n");
   client.stop();
 }
+
+///////////////////////////////////////////////////
+// LED FUNCTIONS
+///////////////////////////////////////////////////
+
+void initiateFastLed(){
+  // {5,16,17,18,19,21,23,25,26,27,32,33};
+  FastLED.addLeds<WS2812B, 5>(leds, 1024).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<WS2812B, 16>(leds, 1024).setCorrection(TypicalLEDStrip);
+  /*FastLED.addLeds<WS2812B, 17>(leds, 1024).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<WS2812B, 18>(leds, 1024).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<WS2812B, 19>(leds, 1024).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<WS2812B, 21>(leds, 1024).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<WS2812B, 23>(leds, 1024).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<WS2812B, 25>(leds, 1024).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<WS2812B, 26>(leds, 1024).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<WS2812B, 27>(leds, 1024).setCorrection(TypicalLEDStrip);*/
+  FastLED.setBrightness(20);
+}
+
+///////////////////////////////////////////////////
+// SETUP && LOOP
+///////////////////////////////////////////////////
  
 void setup()
 {
@@ -110,16 +141,21 @@ void setup()
   Serial.begin(9600);
   Serial.println("Serial started");
   Network.onEvent(onEvent);
+
+  initiateFastLed();
  
   SPI.begin(ETH_SPI_SCK, ETH_SPI_MISO, ETH_SPI_MOSI, ETH_PHY_CS);
   ETH.begin(ETH_PHY_TYPE, ETH_PHY_ADDR, ETH_PHY_CS, ETH_PHY_IRQ, ETH_PHY_RST, SPI);
-  ETH.setHostname()
 }
  
 void loop()
 {
-  if (eth_connected) {
-    //testClient("httpbin.org", 80);
+  performanceCounter++;
+  EVERY_N_MILLISECONDS(10){
+    FastLED.show();
   }
-  delay(3000);
+  EVERY_N_MILLISECONDS(1000){
+    Serial.printf("Performance: %d\n",performanceCounter);
+    performanceCounter = 0;
+  }
 }
