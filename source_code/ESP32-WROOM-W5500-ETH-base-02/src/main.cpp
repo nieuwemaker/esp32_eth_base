@@ -1,29 +1,15 @@
-/*
- * Author: Renzo Mischianti
- * Website: mischianti.org
- * Description: This sketch demonstrates how to set up and use Ethernet on an ESP32 module using the W5500 Ethernet module.
- *              The sketch initializes the Ethernet module, handles Ethernet events, and tests a simple client connection.
- */
- 
-//#define FASTLED_USES_ESP32S3_I2S
-#include "Arduino.h"
- 
-#include <ETH.h>
-#include <NetworkUdp.h>
-#include <SPI.h>
-#include <FastLED.h>
 
-void ledLoop(void* pvParameters);
-bool sendOPPOLREPLY();
-bool handleOPPOLLPacket(int packetSize);
-bool handleOPDMXPacket(int packetSize);
+#include <Arduino.h>
+#include <SPI.h>
+#include <Ethernet.h>
+//#include <EthernetUdp.h>
+#include <FastLED.h>
 
 /**
  * SYSTEM DEFINES
  */
 #define CPU_SPEED 240000000
-#define SPI_SPEED  25000000 // The MAX W5500’s SPI speed according to documentation
-
+#define SPI_SPEED  80000000 // The MAX W5500’s SPI speed according to documentation
 /**
  * ETHERNET DEFINES
  */
@@ -36,7 +22,7 @@ bool handleOPDMXPacket(int packetSize);
 // Set this to 1 to enable dual Ethernet support
 #define USE_TWO_ETH_PORTS 0
 // #ifndef ETH_PHY_TYPE
-#define ETH_PHY_TYPE         ETH_PHY_W5500
+//#define ETH_PHY_TYPE         ETH_PHY_W5500
 #define ETH_PHY_ADDR         1
 #define ETH_PHY_CS           HSPI_CS  
 #define ETH_PHY_IRQ          HSPI_IRQ 
@@ -46,14 +32,6 @@ bool handleOPDMXPacket(int packetSize);
 #define ETH_SPI_SCK         HSPI_SCK  
 #define ETH_SPI_MISO        HSPI_MISO 
 #define ETH_SPI_MOSI        HSPI_MOSI 
-
-/**
- * LED DEFINES
- */
-#define MAX_LEDS_PER_PIN     512
-#define LED_PIN_COUNT         10
-#define PIXEL_MINI_LED_COUNT 256
-#define PIXEL_BAR_LED_COUNT   64
 
 /**
  * ARTNET DEFINES
@@ -78,8 +56,33 @@ bool handleOPDMXPacket(int packetSize);
 #define ARTNET_MAX_BUFFER              530
 #define ARTNET_MANUFACTURER_ID         0x7FF1 // ESTA This a an ID intended for prototyping and not for commercial use (https://tsp.esta.org/tsp/working_groups/CP/mfctrIDs.php)
 #define ARTNET_OEM_CODE                42 // Product code
-#define ARTNET_SHORT_NAME              "NM_PC"
+#define ARTNET_SHORT_NAME              "NM_PIXEL_CONTROL"
 #define ARTNET_LONG_NAME               "NieuweMaker Pixel Controller"
+
+/**
+ * LED DEFINES
+ */
+#define MAX_LEDS_PER_PIN     512
+#define LED_PIN_COUNT         10
+#define PIXEL_MINI_LED_COUNT 256
+#define PIXEL_BAR_LED_COUNT   64
+
+#define LED_PIN_0   5
+#define LED_PIN_1  16
+#define LED_PIN_2  17
+#define LED_PIN_3  18
+#define LED_PIN_4  19
+#define LED_PIN_5  21
+#define LED_PIN_6  23
+#define LED_PIN_7  25
+#define LED_PIN_8  26
+#define LED_PIN_9  27
+#define LED_PIN_10 32
+#define LED_PIN_11 33
+// From: https://randomnerdtutorials.com/esp32-pinout-reference-gpios/
+uint8_t ledPins[12] = {LED_PIN_0, LED_PIN_1,LED_PIN_2,LED_PIN_3,LED_PIN_4,LED_PIN_5,LED_PIN_6,LED_PIN_7,LED_PIN_8,LED_PIN_9,LED_PIN_10,LED_PIN_11};
+CRGB    leds[LED_PIN_COUNT][MAX_LEDS_PER_PIN];
+bool    updateLeds = false;
 
 // Base code for artnetreply from: https://github.com/natcl/Artnet/blob/master/Artnet.h
 struct artnet_poll_reply {
@@ -120,117 +123,83 @@ struct artnet_poll_reply {
     uint8_t  filler[26];
   } __attribute__((packed));
 struct artnet_poll_reply  artPollReply;
-IPAddress connectedIP;
- 
-static bool eth_connected = false;
-NetworkUDP udp;
 
-// From: https://randomnerdtutorials.com/esp32-pinout-reference-gpios/
-uint8_t ledPins[12] = {5,16,17,18,19,21,23,25,26,27,32,33};
+// put function declarations here:
+void loopCore0(void* pvParameters);
+bool InitializeEthernet();
+void monitorEthernetConnection();
+bool sendOPPOLREPLY();
+bool handleOPDMXPacket(char udpData[]);
+bool isConnected();
+void tryUpdateLeds();
 
-CRGB    leds[LED_PIN_COUNT][MAX_LEDS_PER_PIN];
+IPAddress   connectedIP;
+IPAddress   localIP;
+bool        connected;
+EthernetUDP udp;
+bool opSync = false;
 
 int Core0PerformanceCounter = 0;
 int Core1PerformanceCounter = 0;
 int udpCounter              = 0;
- 
+int fpsCounter              = 0;
 ///////////////////////////////////////////////////
 // ETHERNET FUNCTIONS
 ///////////////////////////////////////////////////
-// Ethernet event handler
-void onEvent(arduino_event_id_t event, arduino_event_info_t info)
-{
-  switch (event) {
-    case ARDUINO_EVENT_ETH_START:
-      Serial.println("ETH Started");
-      // Set Ethernet hostname here
-      ETH.setHostname("Pixel-block");
-      break;
-    case ARDUINO_EVENT_ETH_CONNECTED:
-      Serial.println("ETH Connected");
-      break;
-    case ARDUINO_EVENT_ETH_GOT_IP:
-      Serial.printf("ETH Got IP: '%s'\n", esp_netif_get_desc(info.got_ip.esp_netif));
-      Serial.println(ETH);
-      eth_connected = true;
-      udp.begin(ETH.localIP(), ARTNET_LISTENING_PORT);
-      Serial.println("started UDP");
-      break;
-    case ARDUINO_EVENT_ETH_LOST_IP:
-      Serial.println("ETH Lost IP");
-      eth_connected = false;
-      udp.stop();
-      break;
-    case ARDUINO_EVENT_ETH_DISCONNECTED:
-      Serial.println("ETH Disconnected");
-      eth_connected = false;
-      udp.stop();
-      break;
-    case ARDUINO_EVENT_ETH_STOP:
-      Serial.println("ETH Stopped");
-      eth_connected = false;
-      udp.stop();
-      break;
-    default:
-      break;
+bool InitializeEthernet(){
+  byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
+  Ethernet.init(ETH_PHY_CS);
+  if(Ethernet.begin(mac)){
+    Serial.printf("DHCP OK! --> Awaiting IP data\n");
+    uint8_t timeOut = 0;
+    while(!isConnected() && timeOut < 12){
+      delay(500);
+      Serial.printf("Waiting: %d\n",timeOut/2.0f);
+    }
+    Serial.print("Local IP : ");
+    Serial.println(Ethernet.localIP());
+    Serial.print("Subnet Mask : ");
+    Serial.println(Ethernet.subnetMask());
+    Serial.print("Gateway IP : ");
+    Serial.println(Ethernet.gatewayIP());
+    Serial.print("DNS Server : ");
+    Serial.println(Ethernet.dnsServerIP());
+    // Connect other services
+    localIP = Ethernet.localIP();
+    udp.begin(ARTNET_LISTENING_PORT);
+    Serial.println("UDP started");
+    return true;
   }
+  return false;
 }
 
-///////////////////////////////////////////////////
-// LED FUNCTIONS
-///////////////////////////////////////////////////
-
-void initiateFastLed(){
-  // {5,16,17,18,19,21,23,25,26,27,32,33};
-  FastLED.addLeds<WS2812B,  5, GRB>(leds[0], MAX_LEDS_PER_PIN).setCorrection(TypicalLEDStrip);
-  FastLED.addLeds<WS2812B, 16, GRB>(leds[1], MAX_LEDS_PER_PIN).setCorrection(TypicalLEDStrip);
-  FastLED.addLeds<WS2812B, 17, GRB>(leds[2], MAX_LEDS_PER_PIN).setCorrection(TypicalLEDStrip);
-  FastLED.addLeds<WS2812B, 18, GRB>(leds[3], MAX_LEDS_PER_PIN).setCorrection(TypicalLEDStrip);
-  /*FastLED.addLeds<WS2812B, 19>(leds, 1024).setCorrection(TypicalLEDStrip);
-  FastLED.addLeds<WS2812B, 21>(leds, 1024).setCorrection(TypicalLEDStrip);
-  FastLED.addLeds<WS2812B, 23>(leds, 1024).setCorrection(TypicalLEDStrip);
-  FastLED.addLeds<WS2812B, 25>(leds, 1024).setCorrection(TypicalLEDStrip);
-  FastLED.addLeds<WS2812B, 26>(leds, 1024).setCorrection(TypicalLEDStrip);
-  FastLED.addLeds<WS2812B, 27>(leds, 1024).setCorrection(TypicalLEDStrip);*/
-  FastLED.setBrightness(12);
+bool isConnected(){
+  return Ethernet.linkStatus() == 1;
 }
 
-uint8_t pulseValue  = 0;
-bool pulseDirection = true;
-void pulse(){
-  if(pulseDirection){
-    pulseValue++;
-    if(pulseValue == 255){
-      pulseDirection = false;
-    }
-  } else {
-    pulseValue--;
-    if(pulseValue == 0){
-      pulseDirection = true;
-    }
-  }
-  //fl::fill_solid(leds,1024,CRGB(pulseValue,0,0));
-  leds[1][0] = CRGB(pulseValue,0,0);
+void monitorEthernetConnection(){
+  Serial.printf("Link: %d, Hardware: %d\n", Ethernet.linkStatus(), Ethernet.hardwareStatus());
 }
 
 ///////////////////////////////////////////////////
 // ARTNET FUNCTIONS
 ///////////////////////////////////////////////////
 bool ReceiveData(){
-  if(!eth_connected){ return false; }
+  if(!connected){ return false; }
   int packetSize = udp.parsePacket();
   if(packetSize < 1){ return false; } //test for empty packet
-
+  char udpData[packetSize];
   connectedIP = udp.remoteIP();
-  uint8_t udpData[ARTNET_MAX_BUFFER];
-  udp.read(udpData,ARTNET_MAX_BUFFER);
-  uint16_t opCode        = ((udpData[9] << 8) | udpData[8]);
+  udp.read(udpData, packetSize);
+  uint16_t opCode = ((udpData[9] << 8) | udpData[8]);
   if(opCode == OPDMX){
-      return handleOPDMXPacket(packetSize);
+      return handleOPDMXPacket(udpData);
   } else if(opCode == OPPOLL){
+    return sendOPPOLREPLY();
     return true;
-    //return handleOPPOLLPacket(packetSize);
-  } else if(opCode == OPPOLLREPLY){
+  } else if(opCode == OPSYNC){ // Syncing refresh on packets
+    opSync = true;
+    tryUpdateLeds();
     return true;
   } else {
       Serial.printf("Other OPCODE found %x \n", opCode);
@@ -238,32 +207,28 @@ bool ReceiveData(){
   return false;
 }
 
-bool handleOPDMXPacket(int packetSize){
-  uint8_t udpData[packetSize];
-  udp.read(udpData,packetSize);
+bool handleOPDMXPacket(char udpData[]){
   udpCounter++;
   uint16_t universe = ((udpData[15] << 8) | udpData[14]);
   int pcnt          = ARTNET_DMX_HEADER_SIZE;
-  
   for(int n=0;n<ARTNET_MAX_PIXELS_PER_UNIVERSE;n++){
-        // Resolume can be set per screen. Much better! And leave the data to the pixels
-        //leds[1][n] = CRGB(udpData[pcnt++], udpData[pcnt++], udpData[pcnt++]);
-        //this->curtains->Leds[((universe)*ARTNET_MAX_PIXELS_PER_UNIVERSE) + n] = CRGB(udpData[pcnt++], udpData[pcnt++], udpData[pcnt++]);
+      uint16_t totalIndex = (universe * ARTNET_MAX_PIXELS_PER_UNIVERSE) + n;
+      uint8_t  pinIndex   = totalIndex / MAX_LEDS_PER_PIN;//PIXEL_MINI_LED_COUNT;//MAX_LEDS_PER_PIN;
+      uint16_t ledIndex   = totalIndex % MAX_LEDS_PER_PIN;//PIXEL_MINI_LED_COUNT;//MAX_LEDS_PER_PIN; 
+      leds[pinIndex][ledIndex] = CRGB(udpData[pcnt++], udpData[pcnt++], udpData[pcnt++]);
   }
+  updateLeds = true;
   return true;
 }
 
-bool handleOPPOLLPacket(int packetSize){
-    return sendOPPOLREPLY();
-}
-
 bool sendOPPOLREPLY(){
+    
     uint8_t  node_ip_address[4];
     uint8_t  id[8];
-    node_ip_address[0] = ETH.localIP()[0];
-    node_ip_address[1] = ETH.localIP()[0];
-    node_ip_address[2] = ETH.localIP()[0];
-    node_ip_address[3] = ETH.localIP()[0];
+    node_ip_address[0] = Ethernet.localIP()[0];
+    node_ip_address[1] = Ethernet.localIP()[1];
+    node_ip_address[2] = Ethernet.localIP()[2];
+    node_ip_address[3] = Ethernet.localIP()[3];
 
     sprintf((char *)id, "Art-Net");
     memcpy(artPollReply.id, id,              sizeof(artPollReply.id));
@@ -299,7 +264,7 @@ bool sendOPPOLREPLY(){
     artPollReply.numbportsH = 0;
     artPollReply.numbports  = 4;
     artPollReply.status2    = 0x08;
-
+  
     artPollReply.bindip[0] = node_ip_address[0];
     artPollReply.bindip[1] = node_ip_address[1];
     artPollReply.bindip[2] = node_ip_address[2];
@@ -313,70 +278,89 @@ bool sendOPPOLREPLY(){
         artPollReply.swin[i]  = swin[i];
     }
     sprintf((char *)artPollReply.nodereport, "%i DMX output universes active.", artPollReply.numbports);
+    
     udp.beginPacket(connectedIP,ARTNET_LISTENING_PORT);
-    //Udp.beginPacket(broadcast, ART_NET_PORT);//send the packet to the broadcast address
     udp.write((uint8_t *)&artPollReply, sizeof(artPollReply));
     udp.endPacket();
+    return true;
 }
+
 ///////////////////////////////////////////////////
-// SETUP && LOOP
+// LED FUNCTIONS
 ///////////////////////////////////////////////////
 
-void cpuData(){
-  Serial.printf("Xtal Frequency: %d\nCPU  Frequency: %d\nABP  Frequency: %d\n",getXtalFrequencyMhz(), getCpuFrequencyMhz(), getApbFrequency());
+void InitializeFastLed(){
+
+  FastLED.addLeds<WS2812B, LED_PIN_0, GRB>(leds[0], MAX_LEDS_PER_PIN).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<WS2812B, LED_PIN_1, GRB>(leds[1], MAX_LEDS_PER_PIN).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<WS2812B, LED_PIN_2, GRB>(leds[2], MAX_LEDS_PER_PIN).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<WS2812B, LED_PIN_3, GRB>(leds[3], MAX_LEDS_PER_PIN).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<WS2812B, LED_PIN_4, GRB>(leds[4], MAX_LEDS_PER_PIN).setCorrection(TypicalLEDStrip);
+  FastLED.addLeds<WS2812B, LED_PIN_5, GRB>(leds[5], MAX_LEDS_PER_PIN).setCorrection(TypicalLEDStrip);
+  //FastLED.addLeds<WS2812B, LED_PIN_6, GRB>(leds[6], MAX_LEDS_PER_PIN).setCorrection(TypicalLEDStrip);
+  //FastLED.addLeds<WS2812B, LED_PIN_7, GRB>(leds[7], MAX_LEDS_PER_PIN).setCorrection(TypicalLEDStrip);
+  FastLED.setBrightness(12);
 }
- 
-void setup()
-{
-  //Serial.begin(9600);
-  //Serial.begin(115200);
+
+void tryUpdateLeds(){
+  fpsCounter++;
+  if(updateLeds){
+    FastLED.show();
+    updateLeds = false;
+  }
+}
+
+void setup() {
+  InitializeFastLed();
+  leds[1][0] = CRGB::Red1;
+  FastLED.show();
   Serial.begin(115200, SERIAL_8N1);
   Serial.end();
   Serial.begin(115200, SERIAL_8N1);
   Serial.println("Serial started");
+  leds[1][0] = CRGB::Orange1;
+  FastLED.show();
   delay(200);
-  Network.onEvent(onEvent);
-
-  initiateFastLed();
   SPI.setFrequency(SPI_SPEED);
   SPI.begin(ETH_SPI_SCK, ETH_SPI_MISO, ETH_SPI_MOSI, ETH_PHY_CS);
+  connected = InitializeEthernet();
   
-  ETH.begin(ETH_PHY_TYPE, ETH_PHY_ADDR, ETH_PHY_CS, ETH_PHY_IRQ, ETH_PHY_RST, SPI);
-  delay(500);
-  leds[1][0] = CRGB::Red1;
-  /*
   xTaskCreatePinnedToCore (
-    ledLoop,     // Function to implement the task
-    "ledLoop",   // Name of the task
-    100000,      // Stack size in bytes
+    loopCore0,     // Function to implement the task
+    "loopCore0",   // Name of the task
+    10000,      // Stack size in bytes
     NULL,      // Task input parameter
     0,         // Priority of the task
     NULL,      // Task handle.
     0          // Core where the task should run
-  );*/
-  
+  );
+  leds[1][0] = CRGB::Yellow1;
+  FastLED.show();
+  delay(500);
+  leds[1][0] = CRGB::Green1;
+  FastLED.show();
 }
- 
-void loop()
-{
+
+void loop() {
   Core1PerformanceCounter++;
-  EVERY_N_MILLISECONDS(1000){
-    Serial.printf("Core 0: %d Core 1: %d FPS: %d ART-NET: %d\n",Core0PerformanceCounter,Core1PerformanceCounter, FastLED.getFPS(), udpCounter);
+  ReceiveData();
+  EVERY_N_SECONDS(1){
+    Serial.printf("Core 0: %d \tCore 1: %d \tFPS: %d \tART-NET: %d \tFREE HEAP: %d\n",Core0PerformanceCounter,Core1PerformanceCounter, fpsCounter, udpCounter, ESP.getFreeHeap());
     Core0PerformanceCounter = 0;
     Core1PerformanceCounter = 0;
     udpCounter              = 0;
-    //Serial.printf("Total heap: %d, Free Heap: %d, Total PSRAM: %d, Free PSRAM: %d\n", ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getPsramSize(),ESP.getFreePsram());
+    fpsCounter              = 0;
   }
 }
 
-void ledLoop(void* pvParameters){
+void loopCore0(void* pvParameters){
   while(1){
-    ReceiveData();
     Core0PerformanceCounter++;
+    //ReceiveData();
     EVERY_N_MILLIS(20){
-      pulse();
-      FastLED.show();
-      FastLED.countFPS();
+      if(!opSync){
+        tryUpdateLeds();
+      }
     }
   }
 }
